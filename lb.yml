@@ -1,0 +1,7 @@
+---
+- name: Configure load balancer tier
+  hosts: lb
+  become: true
+  roles:
+    - haproxy
+    - keepalived

@@ -1,0 +1,5 @@
+---
+keepalived_vip: 192.168.56.20
+keepalived_interface: enp0s8
+keepalived_router_id: 51
+keepalived_auth_pass: mysecret123

@@ -1,0 +1,6 @@
+---
+- name: Configure web tier
+  hosts: web
+  become: true
+  roles:
+    - nginx

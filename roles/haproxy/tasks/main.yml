@@ -1,0 +1,36 @@
+---
+- name: Install haproxy
+  ansible.builtin.dnf:
+    name: haproxy
+    state: present
+
+- name: Deploy haproxy config
+  ansible.builtin.template:
+    src: haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+    validate: haproxy -c -f %s
+  notify: Restart haproxy
+
+- name: Allow haproxy stats port in SELinux
+  ansible.builtin.command: semanage port -a -t http_port_t -p tcp 8404
+  register: seport_result
+  changed_when: "'already defined' not in seport_result.stderr"
+  failed_when:
+    - seport_result.rc != 0
+    - "'already defined' not in seport_result.stderr"
+
+- name: Open HTTP and stats ports in firewalld
+  ansible.posix.firewalld:
+    port: "{{ item }}"
+    permanent: true
+    immediate: true
+    state: enabled
+  loop:
+    - 80/tcp
+    - 8404/tcp
+
+- name: Enable and start haproxy
+  ansible.builtin.service:
+    name: haproxy
+    state: started
+    enabled: true

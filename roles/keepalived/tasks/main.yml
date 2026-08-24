@@ -1,0 +1,24 @@
+---
+- name: Install keepalived
+  ansible.builtin.dnf:
+    name: keepalived
+    state: present
+
+- name: Allow VRRP protocol in firewalld
+  ansible.posix.firewalld:
+    rich_rule: rule protocol value="vrrp" accept
+    permanent: true
+    immediate: true
+    state: enabled
+
+- name: Deploy keepalived config
+  ansible.builtin.template:
+    src: keepalived.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+  notify: Restart keepalived
+
+- name: Enable and start keepalived
+  ansible.builtin.service:
+    name: keepalived
+    state: started
+    enabled: true
