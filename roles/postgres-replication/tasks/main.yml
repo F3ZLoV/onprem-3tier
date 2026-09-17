@@ -1,0 +1,8 @@
+---
+- name: Configure primary
+  ansible.builtin.include_tasks: primary.yml
+  when: pg_role == "primary"
+
+- name: Configure replica
+  ansible.builtin.include_tasks: replica.yml
+  when: pg_role == "replica"

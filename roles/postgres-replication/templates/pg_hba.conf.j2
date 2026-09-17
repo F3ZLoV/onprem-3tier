@@ -1,0 +1,7 @@
+# Managed by Ansible - do not edit manually
+local   all             all                                     peer
+host    all             all             127.0.0.1/32            ident
+host    all             all             ::1/128                 ident
+
+# Replication: only the replica host, with password auth
+host    replication     {{ pg_repl_user }}    {{ pg_replica_ip }}/32    scram-sha-256

@@ -1,0 +1,3 @@
+pg_role: primary
+pg_primary_ip: 192.168.56.41
+pg_replica_ip: 192.168.56.42

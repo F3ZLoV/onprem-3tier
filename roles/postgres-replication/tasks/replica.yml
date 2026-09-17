@@ -1,0 +1,40 @@
+---
+- name: Check if replica is already configured
+  ansible.builtin.stat:
+    path: "{{ pg_data_dir }}/standby.signal"
+  register: standby_signal
+
+- name: Open PostgreSQL port in firewalld
+  ansible.posix.firewalld:
+    service: postgresql
+    permanent: true
+    immediate: true
+    state: enabled
+
+- name: Stop postgresql before base backup
+  ansible.builtin.service:
+    name: postgresql
+    state: stopped
+  when: not standby_signal.stat.exists
+
+- name: Clear data directory for base backup
+  ansible.builtin.shell: "find {{ pg_data_dir }} -mindepth 1 -delete"
+  when: not standby_signal.stat.exists
+
+- name: Run pg_basebackup from primary
+  become_user: postgres
+  ansible.builtin.command: >
+    pg_basebackup
+    -h {{ pg_primary_ip }}
+    -U {{ pg_repl_user }}
+    -D {{ pg_data_dir }}
+    -Fp -Xs -P -R
+  environment:
+    PGPASSWORD: "{{ pg_repl_password }}"
+  when: not standby_signal.stat.exists
+
+- name: Start postgresql as replica
+  ansible.builtin.service:
+    name: postgresql
+    state: started
+    enabled: true

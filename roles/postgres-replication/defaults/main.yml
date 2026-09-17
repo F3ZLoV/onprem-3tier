@@ -1,0 +1,9 @@
+---
+pg_repl_user: replicator
+pg_data_dir: /var/lib/pgsql/data
+pg_max_wal_senders: 5
+pg_wal_keep_size: 256MB
+# 아래는 host_vars/group_vars에서 채움
+# pg_role: primary | replica
+# pg_primary_ip: 192.168.56.41
+# pg_replica_ip: 192.168.56.42

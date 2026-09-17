@@ -1,0 +1,6 @@
+---
+- name: Configure PostgreSQL replication
+  hosts: db
+  become: true
+  roles:
+    - postgres-replication
