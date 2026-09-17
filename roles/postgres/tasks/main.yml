@@ -1,0 +1,48 @@
+---
+- name: Create LVM volume group on data disk
+  community.general.lvg:
+    vg: "{{ pg_vg_name }}"
+    pvs: "{{ pg_data_disk }}"
+
+- name: Create logical volume using all space
+  community.general.lvol:
+    vg: "{{ pg_vg_name }}"
+    lv: "{{ pg_lv_name }}"
+    size: 100%FREE
+
+- name: Create XFS filesystem on the logical volume
+  community.general.filesystem:
+    fstype: xfs
+    dev: "/dev/{{ pg_vg_name }}/{{ pg_lv_name }}"
+
+- name: Mount the data volume at pgsql dir
+  ansible.posix.mount:
+    path: "{{ pg_data_mount }}"
+    src: "/dev/{{ pg_vg_name }}/{{ pg_lv_name }}"
+    fstype: xfs
+    state: mounted
+
+- name: Install PostgreSQL server
+  ansible.builtin.dnf:
+    name:
+      - "postgresql-server"
+      - "postgresql-contrib"
+    state: present
+
+- name: Restore SELinux context on data dir
+  ansible.builtin.command: restorecon -Rv {{ pg_data_mount }}
+
+- name: Check if database is already initialized
+  ansible.builtin.stat:
+    path: "{{ pg_data_mount }}/data/PG_VERSION"
+  register: pgdata
+
+- name: Initialize the database
+  ansible.builtin.command: postgresql-setup --initdb
+  when: not pgdata.stat.exists
+
+- name: Enable and start postgresql
+  ansible.builtin.service:
+    name: postgresql
+    state: started
+    enabled: true

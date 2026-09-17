@@ -1,0 +1,6 @@
+---
+pg_version: 13
+pg_data_disk: /dev/sdb
+pg_vg_name: pgvg
+pg_lv_name: pglv
+pg_data_mount: /var/lib/pgsql

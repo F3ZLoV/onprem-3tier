@@ -1,0 +1,6 @@
+---
+- name: Configure database tier
+  hosts: db
+  become: true
+  roles:
+    - postgres
