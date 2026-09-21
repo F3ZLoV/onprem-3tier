@@ -1,0 +1,4 @@
+---
+pg_backup_dir: /var/backups/pgsql
+pg_backup_retention_days: 7
+pg_backup_schedule: "*-*-* 03:00:00"

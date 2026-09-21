@@ -1,0 +1,30 @@
+---
+- name: Create backup directory
+  ansible.builtin.file:
+    path: "{{ pg_backup_dir }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0700"
+
+- name: Deploy backup script
+  ansible.builtin.template:
+    src: pg_backup.sh.j2
+    dest: /usr/local/bin/pg_backup.sh
+    mode: "0755"
+
+- name: Deploy systemd service and timer
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    mode: "0644"
+  loop:
+    - pg-backup.service
+    - pg-backup.timer
+
+- name: Enable and start backup timer
+  ansible.builtin.systemd:
+    name: pg-backup.timer
+    enabled: true
+    state: started
+    daemon_reload: true

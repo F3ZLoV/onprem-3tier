@@ -1,0 +1,17 @@
+#!/bin/bash
+set -euo pipefail
+umask 077
+
+BACKUP_DIR="{{ pg_backup_dir }}"
+RETENTION_DAYS={{ pg_backup_retention_days }}
+TS=$(date +%Y%m%d_%H%M%S)
+
+for db in $(psql -Atc "SELECT datname FROM pg_database WHERE NOT datistemplate"); do
+  pg_dump -Fc "$db" -f "${BACKUP_DIR}/${db}_${TS}.dump"
+done
+
+pg_dumpall --globals-only -f "${BACKUP_DIR}/globals_${TS}.sql"
+
+find "$BACKUP_DIR" -type f -mtime +"$RETENTION_DAYS" -delete
+
+echo "backup done: ${TS}"

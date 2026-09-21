@@ -124,13 +124,58 @@ LVM 볼륨 생성(lvg/lvol) → XFS 포맷 → 마운트(fstab 등록) → Postg
 
 ---
 
+## 4주차 — 자동 백업 및 복구 리허설
+
+### 목표
+DB 논리 백업을 자동화하고, 실제로 데이터를 삭제한 뒤 백업에서 복구하는 리허설로 백업의 유효성을 검증한다.
+
+### 설계 판단
+- **백업은 replica(db2)에서 수행**: pg_dump는 DB 전체를 읽어 부하가 크다. primary에서 수행하면 서비스 성능에 영향을 주므로, 읽기가 가능한 replica(hot standby)에서 수행해 부하를 분리했다.
+- **cron 대신 systemd timer**: 실습 VM은 자주 꺼져 있다. cron은 꺼져 있던 시간의 작업을 건너뛰지만, timer는 `Persistent=true`로 놓친 실행을 부팅 후 수행한다. 실행 결과가 journald에 남아 `journalctl -u`로 추적할 수 있다.
+- **custom 형식(`pg_dump -Fc`)**: 압축되며, `pg_restore -t`로 특정 테이블만 선택 복구할 수 있다. 전체를 덮어쓰면 백업 이후의 정상 변경까지 되돌아가므로, 피해 범위만 복구하는 것이 원칙이다.
+- **전역 객체 별도 백업**: pg_dump는 DB 내부 객체만 포함한다. 계정·권한 같은 클러스터 전역 객체는 `pg_dumpall --globals-only`로 따로 백업했다.
+- **실패 시 즉시 중단**: 스크립트에 `set -euo pipefail`을 적용했다. 이것이 없으면 덤프가 실패해도 스크립트가 정상 종료되어, 손상된 백업을 정상으로 오인하게 된다.
+- **보안**: 백업 경로를 데이터 디렉토리 밖(`/var/backups/pgsql`)에 두고 디렉토리 0700, `umask 077`로 파일을 postgres 전용으로 제한했다. 백업 파일에는 DB 전체 데이터가 들어 있다.
+- **보관 정책**: `find -mtime +7 -delete`로 7일 경과분을 자동 삭제해 디스크 고갈을 방지했다.
+
+### 구성 (roles/pg-backup)
+- `templates/pg_backup.sh.j2`: 비템플릿 DB 전체 개별 덤프 + 전역 객체 덤프 + 보관 기간 정리
+- `templates/pg-backup.service.j2`: `Type=oneshot`, `User=postgres`(peer 인증으로 비밀번호 없이 로컬 접속)
+- `templates/pg-backup.timer.j2`: `OnCalendar=*-*-* 03:00:00`, `Persistent=true`
+- `tasks/main.yml`: 백업 디렉토리 생성 → 스크립트 배포 → 유닛 배포 → `daemon_reload` 후 timer 활성화
+- `backup.yml`: `hosts: db2`
+
+### 검증
+- `systemctl list-timers`로 다음 실행 시각(03:00) 등록 확인
+- `systemctl start pg-backup.service`로 예약 실행과 동일한 경로를 수동 트리거
+- `journalctl -u pg-backup.service`에서 `backup done` 로그 확인
+- `/var/backups/pgsql`에 DB 덤프와 전역 객체 파일 생성 확인
+
+### 복구 리허설 — "복제는 백업이 아니다"
+1. `pg_restore -l`로 백업 파일에 대상 테이블(repltest)과 데이터가 포함되어 있음을 **복구 전에 먼저 확인**
+2. primary(db1)에서 `DROP TABLE repltest` 실행 (운영자 실수 시뮬레이션)
+3. replica(db2)에서도 테이블이 사라진 것을 확인. **복제는 DROP까지 그대로 전파**하므로 사람의 실수에 대한 대비책이 되지 못한다.
+4. 백업 파일을 db2 → 컨트롤 노드 → db1로 전송 (`fetch` / `copy`). 전 구간 checksum이 동일해 전송 중 무결성 확인
+5. primary에서 `pg_restore -d postgres -t repltest`로 해당 테이블만 복구
+6. db1·db2 모두에서 데이터 복귀 확인. primary에 복구한 결과가 복제를 통해 replica에도 전파됨
+7. 임시 복구 파일 즉시 삭제
+
+**결론**: 복제는 가용성(서버 장애 대비), 백업은 복구 가능성(데이터 손상·실수 대비)을 담당하며 서로 대체할 수 없다.
+
+### 한계 및 개선 과제
+- **백업이 db2 로컬 디스크에만 존재**: db2 자체가 손상되면 백업도 함께 소실된다. 별도 호스트로의 복사(오프사이트 백업, 3-2-1 원칙)가 필요하다.
+- **특정 시점 복구(PITR) 미지원**: 논리 백업은 백업 시각의 상태로만 복구된다. 03:00 백업 이후 발생한 변경은 복구되지 않는다. WAL 아카이빙을 구성하면 임의 시점으로 복구할 수 있다.
+- **페일오버 시 백업 대상 고정**: 백업 대상이 `hosts: db2`로 고정되어 있어, replica가 primary로 승격되는 상황에서는 대상 조정이 필요하다.
+
+---
+
 ## 진행 현황
 
 - [x] 0주차 — 골든 이미지, Ansible 관리 평면
 - [x] 1주차 — 웹 계층 (Nginx)
 - [x] 2주차 — 로드밸런서 계층 (HAProxy + Keepalived VIP)
 - [x] 3주차 — DB 계층 (PostgreSQL 복제 + LVM 볼륨 분리)
-- [ ] 4주차 — 자동 백업 (pg_dump 스케줄링 + 복구 리허설)
+- [x] 4주차 — 자동 백업 (systemd timer + 복구 리허설)
 - [ ] 5주차 — 관측 계층 (Prometheus + Grafana + Loki)
 - [ ] 6주차 — 네트워크 심화 (VLAN, 방화벽 정책)
 - [ ] 7주차 — 통합 문서화 및 아키텍처 다이어그램

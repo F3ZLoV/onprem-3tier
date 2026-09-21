@@ -1,0 +1,6 @@
+---
+- name: Configure PostgreSQL backup (runs on replica)
+  hosts: db2
+  become: true
+  roles:
+    - pg-backup

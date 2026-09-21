@@ -314,3 +314,69 @@ sudo rm -f /etc/ssh/ssh_host_*
 - **SSH 호스트 키 중복**: 모든 클론이 동일한 호스트 지문을 제시하게 되어 중간자 공격 탐지 기능이 무력화되고, known_hosts 관리가 불가능해진다. 삭제하면 sshd가 다음 기동 시 새로 생성한다.
 
 추가로 VirtualBox 클론 시 MAC 주소 재생성 옵션을 적용해 L2 주소 충돌을 방지했다.
+
+---
+
+## 11. Vault 암호화 파일로 인한 무관한 플레이북 실행 실패
+
+### 증상
+백업 플레이북 실행 시 첫 task도 시작하지 못하고 중단:
+
+```
+ERROR! Attempting to decrypt but no vault secrets found
+```
+
+백업 롤은 암호화된 변수를 전혀 사용하지 않는데도 발생했다.
+
+### 원인
+대상 호스트 db2는 `[db]` 그룹에 속한다. Ansible은 실행 시 대상 호스트가 속한 그룹의 `group_vars/`를 **사용 여부와 무관하게 자동으로 로드**한다. 3주차에 복제 비밀번호를 담아 Vault로 암호화한 `group_vars/db.yml`이 로드되면서 복호화 키를 요구한 것이다.
+
+### 해결
+- 일회성: `ansible-playbook backup.yml --ask-vault-pass`
+- 상시: Vault 비밀번호를 **리포지토리 밖** 파일에 두고 ansible.cfg에서 참조
+
+```bash
+echo '<vault-password>' > ~/.vault_pass
+chmod 600 ~/.vault_pass
+```
+```ini
+# ansible.cfg
+vault_password_file = ~/.vault_pass
+```
+
+### 교훈
+- group_vars는 선언적으로 자동 로드된다. 그룹 단위 암호화는 그 그룹을 대상으로 하는 모든 실행에 영향을 준다.
+- 복호화 키 파일은 반드시 리포지토리 외부에 두고 권한을 600으로 제한한다. 암호화된 파일과 키를 같은 저장소에 두면 암호화의 의미가 사라진다.
+
+---
+
+## 12. ansible.cfg 중복 옵션으로 전체 명령 실행 불가
+
+### 증상
+모든 `ansible` 명령이 즉시 실패:
+
+```
+ERROR: Error reading config file (ansible.cfg): [line 6]:
+option 'vault_password_file' in section 'defaults' already exists
+```
+
+### 원인
+설정 존재 여부를 `grep`으로 확인해 이미 있음을 확인했음에도 `echo ... >> ansible.cfg`로 같은 줄을 한 번 더 추가했다. INI 형식 파서는 동일 섹션 내 중복 키를 허용하지 않아 설정 파일 전체를 읽지 못했다.
+
+### 해결
+줄 단위 삭제 대신 파일 전체를 heredoc으로 재작성했다 (1번 사례의 교훈 적용).
+
+```bash
+cat > ansible.cfg << 'EOF'
+[defaults]
+inventory = inventory/hosts.ini
+remote_user = sysadmin
+host_key_checking = False
+vault_password_file = ~/.vault_pass
+EOF
+```
+
+### 교훈
+- `>>`(append)는 멱등하지 않다. 두 번 실행하면 두 줄이 된다. 설정 파일 변경은 확인 결과를 보고 실행 여부를 판단하거나, Ansible의 `lineinfile`처럼 멱등한 방식을 사용해야 한다.
+- 설정 파일이 손상되면 도구 전체가 동작하지 않는다. 다행히 설정 파일을 읽지 못한 단계에서 중단되어, 뒤이어 입력한 파괴적 명령(DROP TABLE)은 실행되지 않았다.
+- 참고: SSH 재접속 시 홈 디렉토리에서 시작하므로, 프로젝트 디렉토리로 이동하지 않고 실행하면 ansible.cfg를 찾지 못해 "hosts list is empty" 경고와 함께 대상 호스트를 인식하지 못한다(6번 사례와 동일 원인).
