@@ -27,7 +27,6 @@
     state: enabled
   loop:
     - 80/tcp
-    - 8404/tcp
 
 - name: Enable and start haproxy
   ansible.builtin.service:

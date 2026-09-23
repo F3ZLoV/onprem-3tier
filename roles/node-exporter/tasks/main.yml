@@ -34,12 +34,6 @@
     mode: "0644"
   notify: Restart node_exporter
 
-- name: Open exporter port in firewalld
-  ansible.posix.firewalld:
-    port: "{{ node_exporter_port }}/tcp"
-    permanent: true
-    immediate: true
-    state: enabled
 
 - name: Enable and start node_exporter
   ansible.builtin.systemd:

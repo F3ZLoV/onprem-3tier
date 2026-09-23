@@ -58,12 +58,6 @@
     mode: "0644"
   notify: Restart alertmanager
 
-- name: Open alertmanager port in firewalld
-  ansible.posix.firewalld:
-    port: "{{ alertmanager_port }}/tcp"
-    permanent: true
-    immediate: true
-    state: enabled
 
 - name: Enable and start alertmanager
   ansible.builtin.systemd:

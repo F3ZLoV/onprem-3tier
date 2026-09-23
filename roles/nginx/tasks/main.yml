@@ -10,12 +10,6 @@
     dest: /usr/share/nginx/html/index.html
   notify: Restart nginx
 
-- name: Open HTTP in firewalld
-  ansible.posix.firewalld:
-    service: http
-    permanent: true
-    immediate: true
-    state: enabled
 
 - name: Enable and start nginx
   ansible.builtin.service:

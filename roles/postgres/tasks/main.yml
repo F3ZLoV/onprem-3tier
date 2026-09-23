@@ -4,11 +4,17 @@
     vg: "{{ pg_vg_name }}"
     pvs: "{{ pg_data_disk }}"
 
+- name: Check if logical volume exists
+  ansible.builtin.stat:
+    path: "/dev/{{ pg_vg_name }}/{{ pg_lv_name }}"
+  register: pg_lv
+
 - name: Create logical volume using all space
   community.general.lvol:
     vg: "{{ pg_vg_name }}"
     lv: "{{ pg_lv_name }}"
     size: 100%FREE
+  when: not pg_lv.stat.exists
 
 - name: Create XFS filesystem on the logical volume
   community.general.filesystem:

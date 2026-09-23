@@ -68,12 +68,6 @@
     mode: "0644"
   notify: Restart prometheus
 
-- name: Open prometheus port in firewalld
-  ansible.posix.firewalld:
-    port: "{{ prometheus_port }}/tcp"
-    permanent: true
-    immediate: true
-    state: enabled
 
 - name: Enable and start prometheus
   ansible.builtin.systemd:
