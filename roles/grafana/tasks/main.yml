@@ -1,0 +1,35 @@
+---
+- name: Add Grafana repository
+  ansible.builtin.yum_repository:
+    name: grafana
+    description: Grafana OSS
+    baseurl: https://rpm.grafana.com
+    gpgcheck: true
+    gpgkey: https://rpm.grafana.com/gpg.key
+
+- name: Install grafana
+  ansible.builtin.dnf:
+    name: grafana
+    state: present
+
+- name: Provision Prometheus datasource
+  ansible.builtin.template:
+    src: datasource.yml.j2
+    dest: /etc/grafana/provisioning/datasources/prometheus.yml
+    owner: root
+    group: grafana
+    mode: "0640"
+  notify: Restart grafana
+
+- name: Open grafana port in firewalld
+  ansible.posix.firewalld:
+    port: "{{ grafana_port }}/tcp"
+    permanent: true
+    immediate: true
+    state: enabled
+
+- name: Enable and start grafana
+  ansible.builtin.systemd:
+    name: grafana-server
+    state: started
+    enabled: true
