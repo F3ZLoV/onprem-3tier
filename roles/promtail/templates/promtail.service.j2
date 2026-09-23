@@ -1,0 +1,12 @@
+[Unit]
+Description=Promtail log shipper
+After=network-online.target
+
+[Service]
+User=root
+Group=root
+ExecStart=/usr/local/bin/promtail -config.file={{ promtail_dir }}/promtail.yml
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

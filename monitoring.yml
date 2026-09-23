@@ -1,14 +1,16 @@
 ---
-- name: Install node_exporter on all nodes
+- name: Install agents on all nodes
   hosts: all
   become: true
   roles:
     - node-exporter
+    - promtail
 
 - name: Install monitoring stack on monitoring node
   hosts: monitoring
   become: true
   roles:
     - alertmanager
+    - loki
     - prometheus
     - grafana

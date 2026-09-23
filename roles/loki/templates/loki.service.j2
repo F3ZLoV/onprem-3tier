@@ -1,0 +1,12 @@
+[Unit]
+Description=Loki log aggregation
+After=network-online.target
+
+[Service]
+User={{ loki_user }}
+Group={{ loki_user }}
+ExecStart=/usr/local/bin/loki -config.file={{ loki_dir }}/loki.yml
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,6 @@
+---
+promtail_version: "3.1.1"
+promtail_port: 9080
+promtail_dir: /etc/promtail
+promtail_data_dir: /var/lib/promtail
+loki_push_url: "http://192.168.56.50:3100/loki/api/v1/push"

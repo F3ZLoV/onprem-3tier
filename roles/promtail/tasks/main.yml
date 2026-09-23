@@ -1,0 +1,68 @@
+---
+- name: Create promtail directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ promtail_dir }}"
+    - "{{ promtail_data_dir }}"
+
+- name: Check if promtail binary exists
+  ansible.builtin.stat:
+    path: /usr/local/bin/promtail
+  register: promtail_bin
+
+- name: Install unzip
+  ansible.builtin.dnf:
+    name: unzip
+    state: present
+  when: not promtail_bin.stat.exists
+
+- name: Download promtail archive
+  ansible.builtin.get_url:
+    url: "https://github.com/grafana/loki/releases/download/v{{ promtail_version }}/promtail-linux-amd64.zip"
+    dest: /tmp/promtail.zip
+    mode: "0644"
+  when: not promtail_bin.stat.exists
+
+- name: Extract promtail binary
+  ansible.builtin.unarchive:
+    src: /tmp/promtail.zip
+    dest: /tmp
+    remote_src: true
+  when: not promtail_bin.stat.exists
+
+- name: Install promtail binary
+  ansible.builtin.copy:
+    src: /tmp/promtail-linux-amd64
+    dest: /usr/local/bin/promtail
+    mode: "0755"
+    remote_src: true
+  when: not promtail_bin.stat.exists
+  notify: Restart promtail
+
+- name: Deploy promtail config
+  ansible.builtin.template:
+    src: promtail.yml.j2
+    dest: "{{ promtail_dir }}/promtail.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart promtail
+
+- name: Deploy systemd unit
+  ansible.builtin.template:
+    src: promtail.service.j2
+    dest: /etc/systemd/system/promtail.service
+    mode: "0644"
+  notify: Restart promtail
+
+- name: Enable and start promtail
+  ansible.builtin.systemd:
+    name: promtail
+    state: started
+    enabled: true
+    daemon_reload: true
