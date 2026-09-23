@@ -380,3 +380,96 @@ EOF
 - `>>`(append)는 멱등하지 않다. 두 번 실행하면 두 줄이 된다. 설정 파일 변경은 확인 결과를 보고 실행 여부를 판단하거나, Ansible의 `lineinfile`처럼 멱등한 방식을 사용해야 한다.
 - 설정 파일이 손상되면 도구 전체가 동작하지 않는다. 다행히 설정 파일을 읽지 못한 단계에서 중단되어, 뒤이어 입력한 파괴적 명령(DROP TABLE)은 실행되지 않았다.
 - 참고: SSH 재접속 시 홈 디렉토리에서 시작하므로, 프로젝트 디렉토리로 이동하지 않고 실행하면 ansible.cfg를 찾지 못해 "hosts list is empty" 경고와 함께 대상 호스트를 인식하지 못한다(6번 사례와 동일 원인).
+
+---
+
+## 13. Loki 기동 실패 — Promtail과 gRPC 포트 충돌
+
+### 증상
+Loki 배포 후 서비스가 기동되지 않고 재시작을 반복하다 중단:
+
+```
+loki.service: Start request repeated too quickly.
+Failed to start Loki log aggregation.
+```
+
+### 진단
+`journalctl -u loki`에서 원인이 직접 드러났다.
+
+```
+level=error msg="error running loki"
+err="listen tcp :9095: bind: address already in use
+error initialising module: server"
+```
+
+### 원인
+Loki와 Promtail은 모두 Grafana Labs 제품으로 **gRPC 기본 포트가 9095로 동일**하다. mon 노드에는 관측 스택(Loki)과 로그 에이전트(Promtail)가 함께 설치되는데, 먼저 기동된 Promtail이 9095를 점유한 상태에서 Loki가 같은 포트에 바인딩을 시도해 실패했다.
+
+설정에서 `http_listen_port`만 지정하고 `grpc_listen_port`는 기본값에 맡긴 것이 원인이었다.
+
+### 해결
+두 컴포넌트의 gRPC 포트를 명시적으로 분리했다.
+
+```yaml
+# loki.yml — gRPC 포트를 9096으로 이동
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+```
+```yaml
+# promtail.yml — gRPC 비활성화(0 = 임의 포트)
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+```
+
+Promtail은 로그를 Loki로 전송하기만 하고 외부 요청을 수신하지 않으므로 gRPC 리스너가 불필요하다.
+
+### 교훈
+- 동일 호스트에 같은 계열의 컴포넌트를 배치할 때는 기본 포트 충돌을 사전에 확인해야 한다. 문서에 명시된 포트(HTTP)만 보고 부가 포트(gRPC, 메트릭 등)를 놓치기 쉽다.
+- 기동 실패는 `systemctl status`의 요약보다 `journalctl -u <unit>`의 원문 로그에서 원인이 명확히 드러난다. `address already in use` 한 줄로 즉시 특정할 수 있었다.
+- 기본값에 의존하지 않고 주요 포트를 설정에 명시하면 이런 충돌을 예방할 수 있다.
+
+---
+
+## 14. Grafana 데이터소스 프로비저닝 미반영
+
+### 증상
+Loki 설치 후 Grafana의 데이터소스 목록에 Prometheus만 표시되고 Loki가 나타나지 않았다.
+
+### 진단
+처음에는 Grafana가 프로비저닝 파일을 읽지 않은 것으로 판단해 서비스를 재시작했으나 변화가 없었다. 이후 **대상 노드의 실제 파일**을 확인했다.
+
+```bash
+ansible mon -m shell -a "grep -A3 'name: Loki' /etc/grafana/provisioning/datasources/prometheus.yml" -b
+# rc=1 (매칭 없음)
+```
+
+파일 자체에 Loki 항목이 없었다. 즉 Grafana의 문제가 아니라 템플릿이 배포되지 않은 상태였다.
+
+### 원인
+데이터소스 템플릿에 Loki를 추가한 변경이 대상 노드에 반영되기 전이었다. Grafana 재시작은 이미 존재하는 파일을 다시 읽게 할 뿐, 없는 내용을 만들어내지 못한다.
+
+### 해결
+플레이북을 재실행해 템플릿을 배포하자 handler가 Grafana를 재시작했고, 데이터소스 목록에 Loki가 표시되었다.
+
+### 교훈
+- "설정이 적용되지 않았다"고 판단하기 전에 **대상 노드의 실제 파일 상태를 먼저 확인**해야 한다. 컨트롤 노드의 템플릿과 대상 노드의 배포 결과는 별개다.
+- 서비스 재시작은 만능 조치가 아니다. 이 경우 재시작은 원인과 무관했고, 파일 확인이 문제를 즉시 특정했다.
+
+---
+
+## 15. Loki에 특정 서비스 라벨이 나타나지 않음 (장애 아님)
+
+### 증상
+Grafana Explore에서 `unit` 라벨 목록에 `crond.service`, `sshd.service` 등은 보이는데 `haproxy.service`가 없었다.
+
+### 원인
+장애가 아니라 정상 동작이다. Promtail 설정의 `max_age: 12h`에 따라 최근 12시간 범위의 journal만 수집하는데, HAProxy는 해당 기간 동안 journal에 기록을 남기지 않았다. 로그가 없으면 라벨도 생성되지 않는다.
+
+### 확인
+HAProxy 서비스를 재시작해 journal에 기록을 발생시키자 `haproxy.service` 라벨이 즉시 나타났다.
+
+### 교훈
+- **메트릭과 로그의 성질 차이**: 메트릭은 값이 0이어도 시계열이 계속 생성되지만, 로그는 이벤트가 발생해야만 존재한다. 로그 기반 관측에서 "보이지 않음"은 장애가 아니라 이벤트 부재일 수 있다.
+- 수집 범위 설정(`max_age`)이 관측 가능한 대상을 제한한다는 점을 인지해야 한다.
