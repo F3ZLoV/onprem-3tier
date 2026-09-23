@@ -1,0 +1,6 @@
+---
+- name: Apply firewall policy
+  hosts: all
+  become: true
+  roles:
+    - firewall

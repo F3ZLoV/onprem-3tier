@@ -1,0 +1,98 @@
+---
+- name: Remove unused services
+  ansible.posix.firewalld:
+    service: "{{ item }}"
+    permanent: true
+    immediate: true
+    state: disabled
+  loop: "{{ fw_remove_services }}"
+
+# --- node_exporter: 모니터링 노드만 허용 ---
+- name: Allow node_exporter only from monitoring node
+  ansible.posix.firewalld:
+    rich_rule: 'rule family="ipv4" source address="{{ fw_mon_ip }}/32" port port="9100" protocol="tcp" accept'
+    permanent: true
+    immediate: true
+    state: enabled
+
+- name: Close open node_exporter port
+  ansible.posix.firewalld:
+    port: 9100/tcp
+    permanent: true
+    immediate: true
+    state: disabled
+
+# --- web 계층: LB에서만 HTTP 허용 ---
+- name: Allow HTTP from load balancers only
+  ansible.posix.firewalld:
+    rich_rule: 'rule family="ipv4" source address="{{ item }}/32" service name="http" accept'
+    permanent: true
+    immediate: true
+    state: enabled
+  loop: "{{ fw_lb_ips }}"
+  when: inventory_hostname in groups['web']
+
+- name: Close open HTTP service on web tier
+  ansible.posix.firewalld:
+    service: http
+    permanent: true
+    immediate: true
+    state: disabled
+  when: inventory_hostname in groups['web']
+
+# --- db 계층: 상대 DB에서만 PostgreSQL 허용 ---
+- name: Allow PostgreSQL between db nodes only
+  ansible.posix.firewalld:
+    rich_rule: 'rule family="ipv4" source address="{{ item }}/32" service name="postgresql" accept'
+    permanent: true
+    immediate: true
+    state: enabled
+  loop: "{{ fw_db_ips }}"
+  when: inventory_hostname in groups['db']
+
+- name: Close open PostgreSQL service on db tier
+  ansible.posix.firewalld:
+    service: postgresql
+    permanent: true
+    immediate: true
+    state: disabled
+  when: inventory_hostname in groups['db']
+
+# --- lb 계층: stats는 관리 노드만 ---
+- name: Allow HAProxy stats from monitoring and control nodes
+  ansible.posix.firewalld:
+    rich_rule: 'rule family="ipv4" source address="{{ item }}/32" port port="8404" protocol="tcp" accept'
+    permanent: true
+    immediate: true
+    state: enabled
+  loop: "{{ [fw_mon_ip] + fw_admin_ips }}"
+  when: inventory_hostname in groups['lb']
+
+- name: Close open stats port
+  ansible.posix.firewalld:
+    port: 8404/tcp
+    permanent: true
+    immediate: true
+    state: disabled
+  when: inventory_hostname in groups['lb']
+
+# --- mon: Prometheus/Alertmanager는 관리 접근만 ---
+- name: Allow Prometheus and Alertmanager from admin hosts
+  ansible.posix.firewalld:
+    rich_rule: 'rule family="ipv4" source address="{{ item.0 }}/32" port port="{{ item.1 }}" protocol="tcp" accept'
+    permanent: true
+    immediate: true
+    state: enabled
+  loop: "{{ fw_admin_ips | product(['9090', '9093']) | list }}"
+  when: inventory_hostname in groups['monitoring']
+
+- name: Close open Prometheus and Alertmanager ports
+  ansible.posix.firewalld:
+    port: "{{ item }}/tcp"
+    permanent: true
+    immediate: true
+    state: disabled
+  loop:
+    - "9090"
+    - "9093"
+  when: inventory_hostname in groups['monitoring']
