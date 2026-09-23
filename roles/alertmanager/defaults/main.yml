@@ -1,0 +1,6 @@
+---
+alertmanager_version: "0.27.0"
+alertmanager_port: 9093
+alertmanager_user: alertmanager
+alertmanager_dir: /etc/alertmanager
+alertmanager_data_dir: /var/lib/alertmanager

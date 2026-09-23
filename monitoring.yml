@@ -5,9 +5,10 @@
   roles:
     - node-exporter
 
-- name: Install Prometheus and Grafana on monitoring node
+- name: Install monitoring stack on monitoring node
   hosts: monitoring
   become: true
   roles:
+    - alertmanager
     - prometheus
     - grafana

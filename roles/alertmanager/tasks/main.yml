@@ -1,0 +1,73 @@
+---
+- name: Create alertmanager system user
+  ansible.builtin.user:
+    name: "{{ alertmanager_user }}"
+    system: true
+    shell: /sbin/nologin
+    create_home: false
+
+- name: Create config and data directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ alertmanager_user }}"
+    group: "{{ alertmanager_user }}"
+    mode: "0755"
+  loop:
+    - "{{ alertmanager_dir }}"
+    - "{{ alertmanager_data_dir }}"
+
+- name: Check if alertmanager binary exists
+  ansible.builtin.stat:
+    path: /usr/local/bin/alertmanager
+  register: am_bin
+
+- name: Download and extract alertmanager
+  ansible.builtin.unarchive:
+    src: "https://github.com/prometheus/alertmanager/releases/download/v{{ alertmanager_version }}/alertmanager-{{ alertmanager_version }}.linux-amd64.tar.gz"
+    dest: /tmp
+    remote_src: true
+  when: not am_bin.stat.exists
+
+- name: Install alertmanager binaries
+  ansible.builtin.copy:
+    src: "/tmp/alertmanager-{{ alertmanager_version }}.linux-amd64/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    mode: "0755"
+    remote_src: true
+  loop:
+    - alertmanager
+    - amtool
+  when: not am_bin.stat.exists
+  notify: Restart alertmanager
+
+- name: Deploy alertmanager config
+  ansible.builtin.template:
+    src: alertmanager.yml.j2
+    dest: "{{ alertmanager_dir }}/alertmanager.yml"
+    owner: "{{ alertmanager_user }}"
+    group: "{{ alertmanager_user }}"
+    mode: "0644"
+    validate: /usr/local/bin/amtool check-config %s
+  notify: Restart alertmanager
+
+- name: Deploy systemd unit
+  ansible.builtin.template:
+    src: alertmanager.service.j2
+    dest: /etc/systemd/system/alertmanager.service
+    mode: "0644"
+  notify: Restart alertmanager
+
+- name: Open alertmanager port in firewalld
+  ansible.posix.firewalld:
+    port: "{{ alertmanager_port }}/tcp"
+    permanent: true
+    immediate: true
+    state: enabled
+
+- name: Enable and start alertmanager
+  ansible.builtin.systemd:
+    name: alertmanager
+    state: started
+    enabled: true
+    daemon_reload: true
