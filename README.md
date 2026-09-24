@@ -220,29 +220,3 @@ HAProxy로 웹을 이중화해도 LB가 단일 구성이면 LB 자체가 새로�
 **멱등성** — 플레이북 재실행 시 전 노드 changed=0
 
 ![idempotency](docs/screenshots/idempotency.png)
-
-### 검증 화면
-
-**VIP 페일오버** — MASTER 정지 시 VIP가 BACKUP으로 이동하며 서비스는 계속 응답
-
-![failover](docs/screenshots/failover-2-down.png)
-
-**헬스체크 자동 제외** — web1 정지 시 DOWN 표시, 트래픽은 web2로만 분배
-
-![haproxy](docs/screenshots/haproxy-web1-down.png)
-
-**알림 발화** — 디스크 여유 20% 미만이 2분 지속되어 PENDING에서 FIRING으로 전환
-
-![alert](docs/screenshots/alert-firing.png)
-
-**메트릭 수집** — 전 노드 7/7 정상
-
-![targets](docs/screenshots/prometheus-targets.png)
-
-**접근 제어** — 출발지 IP 기반 rich rule 적용 상태
-
-![firewall](docs/screenshots/firewall-policy.png)
-
-**멱등성** — 플레이북 재실행 시 전 노드 changed=0
-
-![idempotency](docs/screenshots/idempotency.png)
