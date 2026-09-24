@@ -44,7 +44,7 @@
 |---|---|
 | OS | Rocky Linux 9 (RHEL 9 계열) |
 | 가상화 | VirtualBox |
-| 자동화 (IaC) | Ansible — 롤 8개, 플레이북 6개 |
+| 자동화 (IaC) | Ansible — 롤 13개, 플레이북 7개 |
 | 웹 | Nginx |
 | 로드밸런싱 | HAProxy (L7, roundrobin, HTTP 헬스체크) |
 | 고가용성 | Keepalived (VRRP) |
